@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [-DVK_USE_PLATFORM_WIN32_KHR, -std=c++17]
