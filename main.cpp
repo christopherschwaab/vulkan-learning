@@ -1,8 +1,8 @@
 #include <iostream>
-#include <Windows.h>
-#include <stdint.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
+#include <GLFW/glfw3.h>
+#include <stdint.h>
 #include <vector>
 #include <string_view>
 #include <algorithm>
@@ -43,22 +43,6 @@ static VkResult create_debug_utils_messenger_ext(VkInstance instance, const VkDe
   // check it was successful. Currently we'll just crash if loading fails.
   load_vulkan_function(instance, "vkCreateDebugUtilsMessengerExt", (PFN_vkVoidFunction*) &createDebugUtilsMessengerExt);
   return (*createDebugUtilsMessengerExt)(instance, &createInfo, allocator, &debugMessenger);
-}
-
-static const char** get_instance_extensions(int &extensionCount) {
-  static const char* requiredExtensions[] = {
-    VK_KHR_SURFACE_EXTENSION_NAME,
-    VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
-  };
-  extensionCount = sizeof(requiredExtensions) / sizeof(requiredExtensions[0]) - !is_debug();
-
-  std::cout << "extensionCount: " << extensionCount << std::endl;
-  for (int i = 0; i < extensionCount; ++i) {
-    std::cout << "extension: " << requiredExtensions[i] << std::endl;
-  }
-
-  return requiredExtensions;
 }
 
 template <size_t N>
@@ -131,8 +115,8 @@ static VkInstance create_instance(const bool enableValidationLayers) {
     std::cout << "required validation layer is missing" << std::endl;
     return VK_NULL_HANDLE;
   }
-  int extensionCount = 0;
-  const char** extensions = get_instance_extensions(extensionCount);
+  uint32_t extensionCount = 0;
+  const char** extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
   createInfo.enabledExtensionCount = extensionCount;
   createInfo.ppEnabledExtensionNames = extensions;
   if (enableValidationLayers) {
@@ -153,21 +137,6 @@ static VkInstance create_instance(const bool enableValidationLayers) {
     return VK_NULL_HANDLE;
   }
   return instance;
-}
-
-static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-  switch (uMsg) {
-  case WM_CLOSE:
-    DestroyWindow(hwnd);
-    return LRESULT(0);
-
-  case WM_DESTROY:
-    PostQuitMessage(0);
-    return LRESULT(0);
-
-  default:
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
-  }
 }
 
 struct QueueFamilyIndices {
@@ -277,39 +246,19 @@ static VkInstance init_vulkan() {
 }
 
 auto main(int argc, char *argv[]) -> int {
-  HMODULE mainModule = GetModuleHandle(nullptr);
-  WNDCLASS wc = {0};
-  wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-  wc.hInstance = mainModule;
-  wc.lpszClassName = TEXT("internet");
-  wc.lpfnWndProc = WindowProc;
-  wc.cbWndExtra = sizeof(void*);
-  if (!RegisterClass(&wc)) {
-    std::cout << "RegisterClass failed" << std::endl;
-    return 1;
-  }
-
-  HWND hwnd = CreateWindowEx(0, TEXT("internet"), TEXT("internet"),
-                             WS_VISIBLE | WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                             CW_USEDEFAULT, INITIAL_WIDTH, INITIAL_HEIGHT, NULL,
-                             NULL, mainModule, NULL);
-  VkInstance instance = init_vulkan();
-  if (instance == VK_NULL_HANDLE) {
-    return 1;
-  }
-
-  for (;;) {
-    MSG msg;
-    if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-      if (msg.message == WM_QUIT) {
-        break;
-      }
-      TranslateMessage(&msg);
-      DispatchMessage(&msg);
-    }
-  }
-
-  vkDestroyInstance(instance, nullptr);
-
-  return 0;
+	if (!glfwInit()) {
+		// TODO: handle failed initialisation
+	}
+	
+	GLFWwindow* window = glfwCreateWindow(INITIAL_WIDTH, INITIAL_HEIGHT, "Test", NULL, NULL);
+	if (!window) {
+		// TODO: handle failed window or context creation
+	}
+	init_vulkan();
+	while(!glfwWindowShouldClose(window)){
+		glfwPollEvents();
+	}
+	glfwDestroyWindow(window);
+	glfwTerminate();
+    return 0;
 }

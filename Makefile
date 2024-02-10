@@ -1,9 +1,12 @@
-CXXFLAGS := -DUNICODE=1 -D_UNICODE=1 -DVK_USE_PLATFORM_WIN32_KHR -std:c++17
+CXXFLAGS := -std=c++17
 
-all: main.exe
+all: main
+
+main: main.o
+	$(CXX) $^ -lvulkan -lglfw
 
 main.o: main.cpp
-	clang-cl $(CXXFLAGS) -I"c:/VulkanSDK/1.2.198.1/Include/" -c main.cpp -o main.o
+	$(CXX) $(CXXFLAGS) -c main.cpp -o main.o
 
 main.exe: main.o
 	lld-link.exe -out:main.exe -nologo main.o -libpath:"c:/VulkanSDK/1.2.198.1/Lib/" -defaultlib:kernel32.lib -defaultlib:msvcrt.lib -defaultlib:kernel32.lib -defaultlib:user32.lib -defaultlib:vulkan-1.lib
