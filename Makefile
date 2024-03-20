@@ -3,7 +3,7 @@ CXXFLAGS := -std=c++17 -g
 all: main
 
 main: main.o
-	$(CXX) $^ -lvulkan -lglfw
+	$(CXX) $^ -lvulkan -lglfw -ldecor-0
 
 main.o: main.cpp
 	$(CXX) $(CXXFLAGS) -c main.cpp -o main.o

@@ -41,7 +41,7 @@ static VkResult create_debug_utils_messenger_ext(VkInstance instance, const VkDe
 	static VkResult(*createDebugUtilsMessengerExt)(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT*);
 	// TODO(chris): I guess we should probably load this at the beginning and
 	// check it was successful. Currently we'll just crash if loading fails.
-	load_vulkan_function(instance, "vkCreateDebugUtilsMessengerExt", (PFN_vkVoidFunction*) &createDebugUtilsMessengerExt);
+	load_vulkan_function(instance, "vkCreateDebugUtilsMessengerEXT", (PFN_vkVoidFunction*) &createDebugUtilsMessengerExt);
 	return (*createDebugUtilsMessengerExt)(instance, &createInfo, allocator, &debugMessenger);
 }
 
@@ -52,19 +52,29 @@ static bool check_validation_layer_support(const std::array<const char*, N> &val
 	
 	std::vector<VkLayerProperties> availableLayers(layerCount);
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-	
-	return std::all_of(validationLayers.cbegin(), validationLayers.cend(), [&](auto validationLayer) {
-		return std::any_of(availableLayers.cbegin(), availableLayers.cend(), [&](auto layer) {
-			return std::string_view(validationLayer) == layer.layerName;
-		});
-	});
+
+	bool ok = true;
+	for (auto validationLayer : validationLayers) {
+		bool found = false;
+		for (auto layer : availableLayers) {
+			if (std::string_view(validationLayer) == layer.layerName) {
+				found = true;
+			}
+		}
+		if (!found) {
+			std::cout << "validation layer " << validationLayer << " not found" << std::endl;
+			ok = false;
+		}
+	}
+	return ok;
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
 	const VkDebugUtilsMessengerCallbackDataEXT *callbackData,
-	void *userData) {
+	void *userData
+) {
 	std::cerr << "validation layer: " << callbackData->pMessage << std::endl;
 	return VK_FALSE;
 }
@@ -123,6 +133,7 @@ static VkInstance create_instance(const bool enableValidationLayers) {
 	createInfo.enabledExtensionCount = extensionCount;
 	createInfo.ppEnabledExtensionNames = extended_extensions.data();
 	if (enableValidationLayers) {
+		std::cout << "enabling validation layers" << std::endl;
 		createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
 		createInfo.ppEnabledLayerNames = validationLayers.data();
 	
@@ -144,20 +155,33 @@ static VkInstance create_instance(const bool enableValidationLayers) {
 
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
+	std::optional<uint32_t> presentFamily;
 };
 
-static QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
+static QueueFamilyIndices find_queue_families(VkPhysicalDevice device, VkSurfaceKHR surface) {
 	QueueFamilyIndices indices;
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-	auto queueFamily = std::find_if(queueFamilies.cbegin(), queueFamilies.cend(), [](const VkQueueFamilyProperties queueFamily) -> bool {
-		return queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT;
-	});
-	if (queueFamily != queueFamilies.cend()) {
-		indices.graphicsFamily = queueFamily - queueFamilies.cbegin();
+	for (int i = 0; i < queueFamilyCount; i++) {
+		const auto &queueFamily = queueFamilies[i];
+		if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+			indices.graphicsFamily = std::optional(i);
+		}
+		VkBool32 presentSupport = false;
+		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+		if (presentSupport) {
+			indices.presentFamily = std::make_optional(i);
+		}
 	}
+	//auto queueFamily = std::find_if(queueFamilies.cbegin(), queueFamilies.cend(), [](const VkQueueFamilyProperties queueFamily) -> bool {
+	//	std::cout << "queue family flags: " << queueFamily.queueFlags << std::endl;
+	//	return queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT;
+	//});
+	//if (queueFamily != queueFamilies.cend()) {
+	//	indices.graphicsFamily = queueFamily - queueFamilies.cbegin();
+	//}
 	return indices;
 }
 
@@ -194,13 +218,13 @@ struct LogicalDevice {
 	VkDevice device;
 };
 
-static LogicalDevice create_logical_device(VkPhysicalDevice physicalDevice) {
-	const QueueFamilyIndices indices = find_queue_families(physicalDevice);
+static LogicalDevice create_logical_device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
+	const QueueFamilyIndices indices = find_queue_families(physicalDevice, surface);
 	if (!indices.graphicsFamily.has_value()) {
 		std::cerr << "failed to find a suitable queue family" << std::endl;
 		return LogicalDevice{indices, VK_NULL_HANDLE};
 	}
-	
+
 	VkDeviceQueueCreateInfo queueCreateInfo = {};
 	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
@@ -225,7 +249,7 @@ static LogicalDevice create_logical_device(VkPhysicalDevice physicalDevice) {
 	return LogicalDevice{indices, device};
 }
 
-static VkInstance init_vulkan() {
+static VkInstance init_vulkan(VkSurfaceKHR surface) {
 	static VkDebugUtilsMessengerEXT debugMessenger = {};
 	VkInstance instance = create_instance(is_debug());
 	if (instance == VK_NULL_HANDLE) {
@@ -240,7 +264,7 @@ static VkInstance init_vulkan() {
 		// application (and therefore the os will release it)
 		return VK_NULL_HANDLE;
 	}
-	LogicalDevice logicalDevice = create_logical_device(physicalDevice);
+	LogicalDevice logicalDevice = create_logical_device(physicalDevice, surface);
 	if (logicalDevice.device == VK_NULL_HANDLE) {
 		std::cerr << "create_logical_device failed" << std::endl;
 		return VK_NULL_HANDLE;
@@ -251,17 +275,41 @@ static VkInstance init_vulkan() {
 auto main(int argc, char *argv[]) -> int {
 	if (!glfwInit()) {
 		// TODO: handle failed initialisation
+		std::cerr << "fatal: glfwInit failed" << std::endl;
+		return 1;
 	}
-	
+
+	// print the list of vulkan layers available
+	uint32_t layerCount;
+	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+	std::vector<VkLayerProperties> availableLayers(layerCount);
+	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+	std::cout << "available layers:" << std::endl;
+	for (const auto &layer : availableLayers) {
+		std::cout << layer.layerName << std::endl;
+	}
+
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
 	GLFWwindow* window = glfwCreateWindow(INITIAL_WIDTH, INITIAL_HEIGHT, "Test", NULL, NULL);
 	if (!window) {
 		// TODO: handle failed window or context creation
+		std::cerr << "fatal: glfwCreateWindow failed" << std::endl;
+		return 1;
 	}
-	init_vulkan();
+
+	VkSurfaceKHR surface;
+	const VkResult err = glfwCreateWindowSurface(instance, window, nullptr, &surface);
+	if (err) {
+		std::cerr << "failed to create window surface" << std::endl;
+		return 1;
+	}
+
+	init_vulkan(surface);
 	while(!glfwWindowShouldClose(window)){
 		glfwPollEvents();
 	}
 	glfwDestroyWindow(window);
 	glfwTerminate();
-    return 0;
+	return 0;
 }
