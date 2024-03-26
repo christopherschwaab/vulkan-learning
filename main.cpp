@@ -191,7 +191,7 @@ static bool is_device_suitable(VkPhysicalDevice device) {
 	vkGetPhysicalDeviceProperties(device, &deviceProperties);
 	vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 	
-	return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+	return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU || VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
 }
 
 static VkPhysicalDevice pick_physical_device(VkInstance instance) {
@@ -257,18 +257,6 @@ static VkInstance init_vulkan(VkSurfaceKHR surface) {
 		return instance;
 	}
 	setup_debug_messenger(instance, debugMessenger);
-	const auto physicalDevice = pick_physical_device(instance);
-	if (VK_NULL_HANDLE == physicalDevice) {
-		// TODO(chris): probably double check the leak of the instance is fine since
-		// I assume we always maintain an instance for the lifetime of the
-		// application (and therefore the os will release it)
-		return VK_NULL_HANDLE;
-	}
-	LogicalDevice logicalDevice = create_logical_device(physicalDevice, surface);
-	if (logicalDevice.device == VK_NULL_HANDLE) {
-		std::cerr << "create_logical_device failed" << std::endl;
-		return VK_NULL_HANDLE;
-	}
 	return instance;
 }
 
@@ -298,14 +286,29 @@ auto main(int argc, char *argv[]) -> int {
 		return 1;
 	}
 
+	
 	VkSurfaceKHR surface;
+	VkInstance instance = init_vulkan(surface);
 	const VkResult err = glfwCreateWindowSurface(instance, window, nullptr, &surface);
 	if (err) {
 		std::cerr << "failed to create window surface" << std::endl;
 		return 1;
 	}
 
-	init_vulkan(surface);
+	const auto physicalDevice = pick_physical_device(instance);
+	if (VK_NULL_HANDLE == physicalDevice) {
+		// TODO(chris): probably double check the leak of the instance is fine since
+		// I assume we always maintain an instance for the lifetime of the
+		// application (and therefore the os will release it)
+		return 1;
+	}
+
+	LogicalDevice logicalDevice = create_logical_device(physicalDevice, surface);
+	if (logicalDevice.device == VK_NULL_HANDLE) {
+		std::cerr << "create_logical_device failed" << std::endl;
+		return 1;
+	}
+
 	while(!glfwWindowShouldClose(window)){
 		glfwPollEvents();
 	}
